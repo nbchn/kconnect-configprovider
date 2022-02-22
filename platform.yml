@@ -1,0 +1,75 @@
+---
+apiVersion: platform.confluent.io/v1beta1
+kind: Zookeeper
+metadata:
+  name: zookeeper
+  namespace: vault-tests
+spec:
+  replicas: 3
+  image:
+    application: confluentinc/cp-zookeeper:7.0.1
+    init: confluentinc/confluent-init-container:2.2.0-1
+  dataVolumeCapacity: 10Gi
+  logVolumeCapacity: 10Gi
+---
+apiVersion: platform.confluent.io/v1beta1
+kind: Kafka
+metadata:
+  name: kafka
+  namespace: vault-tests
+spec:
+  replicas: 3
+  image:
+    application: confluentinc/cp-server:7.0.1
+    init: confluentinc/confluent-init-container:2.2.0-1
+  dataVolumeCapacity: 10Gi
+  metricReporter:
+    enabled: true
+  dependencies:
+    zookeeper:
+      endpoint: zookeeper.vault-tests.svc.cluster.local:2181
+---
+apiVersion: platform.confluent.io/v1beta1
+kind: Connect
+metadata:
+  name: connect
+  namespace: vault-tests
+spec:
+  podTemplate:
+    probe:
+      readiness:
+        periodSeconds: 10
+        failureThreshold: 5
+        timeoutSeconds: 500
+        initialDelaySeconds: 500
+      liveness:
+        periodSeconds: 10
+        failureThreshold: 5
+        timeoutSeconds: 500
+        initialDelaySeconds: 500
+  replicas: 1
+  image:
+    application: confluentinc/cp-server-connect:7.0.1
+    init: confluentinc/confluent-init-container:2.2.0-1
+  configOverrides:
+    server:
+      - config.providers=vault
+      - config.providers.vault.class=com.github.jcustenborder.kafka.config.vault.VaultConfigProvider
+      - config.providers.vault.param.vault.address=http://10.13.0.138:8200
+      - config.providers.vault.param.vault.token=<INSERT TOKEN HERE>
+      - config.providers.vault.param.vault.login.by=Token
+  build:
+    type: onDemand
+    onDemand:
+      plugins:
+        locationType: confluentHub
+        confluentHub:
+          - name: kafka-connect-datagen
+            owner: confluentinc
+            version: 0.5.2
+          - name: kafka-config-provider-vault
+            owner: jcustenborder
+            version: 0.1.2
+  dependencies:
+    kafka:
+      bootstrapEndpoint: kafka:9071
